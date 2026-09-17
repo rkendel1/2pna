@@ -3,6 +3,7 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import { createFeltDB } from "@feltdb/core";
+import feltDbConfig from "@/feltdb.config.json";
 import type {
   Action,
   Artifact,
@@ -33,7 +34,7 @@ const globalForDb = globalThis as unknown as {
 export const db =
   globalForDb.id8Db ??
   createFeltDB({
-    namespace: "id8",
+    namespace: feltDbConfig.namespace,
     mode: "local",
     path: dataPath,
   });

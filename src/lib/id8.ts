@@ -1398,11 +1398,13 @@ export async function continueAutonomousWork(attentionId: string) {
     const requirement = detail.requirements.find(
       (item) => item.id === "req-prep-wc",
     );
+    const qcWork = detail.work.find((item) => item.id === "work-prep-premium-qc");
     if (!requirement) return;
 
-    const [currentRequirement, currentWork] = await Promise.all([
+    const [currentRequirement, currentWork, currentQcWork] = await Promise.all([
       requirements.get(requirement.id),
       workItems.get(waitingWork.id),
+      qcWork ? workItems.get(qcWork.id) : Promise.resolve(undefined),
     ]);
     if (
       !currentRequirement ||
@@ -1447,6 +1449,17 @@ export async function continueAutonomousWork(attentionId: string) {
       },
       waitingWork.id,
     );
+    if (currentQcWork?.status === "running") {
+      await workItems.put(
+        {
+          ...currentQcWork,
+          status: "completed",
+          output: "Proposal QC passed after final quote sync.",
+          completed_at: now,
+        },
+        currentQcWork.id,
+      );
+    }
     if (detail.context) {
       await contextSnapshots.put(
         {
