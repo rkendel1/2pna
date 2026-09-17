@@ -22,12 +22,10 @@ button {
   font: inherit;
 }
 
-a:hover,
 button:hover {
   opacity: 0.92;
 }
 
-a:active,
 button:active {
   opacity: 0.92;
 }
@@ -301,6 +299,11 @@ button:focus-visible {
   color: #2d825a;
   font-weight: 700;
   text-decoration: none;
+}
+
+.detail-back:hover,
+.detail-back:active {
+  text-decoration: underline;
 }
 
 .detail-hero {

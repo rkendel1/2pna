@@ -1702,18 +1702,26 @@ export async function continueAutonomousWork(attentionId: string) {
   }
 
   if (attentionId === "attention-blocked-payroll") {
-    const [currentRequirement, currentWork, currentBlockedWork, currentContext] =
+    const [
+      currentRequirement,
+      currentWork,
+      currentPayrollRequirement,
+      currentOfficerRequirement,
+      currentContext,
+    ] =
       await Promise.all([
         requirements.get("req-blocked-submission"),
         workItems.get("work-blocked-review-submission"),
-        workItems.get("work-blocked-request-payroll"),
+        requirements.get("req-blocked-payroll"),
+        requirements.get("req-blocked-officer"),
         detail.context ? contextSnapshots.get(detail.context.id) : undefined,
       ]);
     if (
       !currentRequirement ||
       currentRequirement.satisfied ||
       !currentWork ||
-      currentBlockedWork?.status === "blocked" ||
+      !currentPayrollRequirement?.satisfied ||
+      !currentOfficerRequirement?.satisfied ||
       !["queued", "waiting"].includes(currentWork.status)
     ) {
       return;
@@ -1926,6 +1934,29 @@ export async function completeDecision(
     },
     detail.decision.id,
   );
+  if (decisionType === "defer") {
+    await actions.put(
+      {
+        id: actionId,
+        attention: attentionId,
+        decision: detail.decision.id,
+        type: decisionType,
+        parameters: serializeList([`label=${decisionLabels[decisionType]}`]),
+        status: "pending",
+        result: "Deferred until a future follow-up is scheduled.",
+      },
+      actionId,
+    );
+    await putEvent({
+      id: makeEventId("event-decision-made", attentionId),
+      attention: attentionId,
+      type: "decision.made",
+      detail: `${decisionLabels[decisionType]} selected.`,
+      stage: "decision",
+      created_at: now,
+    });
+    return;
+  }
   await actions.put(
     {
       id: actionId,
