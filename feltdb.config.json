@@ -1,0 +1,17 @@
+{
+  "namespace": "id8",
+  "mode": "local",
+  "runtime": "node",
+  "storage": "durable",
+  "distributed": true,
+  "agents": {
+    "enabled": true
+  },
+  "application": {
+    "lifecycle": "managed"
+  },
+  "applicationUrl": "http://localhost:3000/",
+  "capabilities": {
+    "search": true
+  }
+}
