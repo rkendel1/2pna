@@ -183,6 +183,11 @@ app id8 {
     index attention using hash(attention)
   }
 
+  collection SystemState {
+    status: text
+    updated_at: datetime
+  }
+
   collection DurableEvent {
     attention: ref Attention
     type: text
@@ -256,5 +261,6 @@ app id8 {
   policy Decision { read: authenticated write: authenticated }
   policy Action { read: authenticated write: authenticated }
   policy Outcome { read: authenticated write: authenticated }
+  policy SystemState { read: authenticated write: authenticated }
   policy DurableEvent { read: authenticated write: authenticated }
 }

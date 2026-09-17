@@ -17,6 +17,7 @@ import {
   plans,
   relationships,
   requirements,
+  systemStates,
   workItems,
 } from "@/src/lib/feltdb";
 import type {
@@ -96,40 +97,99 @@ const makeEventId = (prefix: string, attentionId: string) =>
 async function ensureSeedData() {
   if (!seedPromise) {
     seedPromise = (async () => {
-      if ((await attentions.count()) > 0) {
+      const sentinelId = "system-state-id8-seed-v1";
+      const currentState = await systemStates.get(sentinelId);
+      if (currentState?.status === "ready") {
         return;
       }
 
-      const seed = buildSeedData();
+      const claim = await systemStates.putIfAbsent(
+        sentinelId,
+        {
+          id: sentinelId,
+          status: "seeding",
+          updated_at: new Date().toISOString(),
+        },
+      );
+      if (!claim.inserted) {
+        while (true) {
+          const state = await systemStates.get(sentinelId);
+          if (!state || state.status === "ready") {
+            return;
+          }
+          if (state.status === "failed") {
+            seedPromise = null;
+            throw new Error("FeltDB seed initialization failed.");
+          }
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      }
 
-      for (const record of seed.people) await people.put(record, record.id);
-      for (const record of seed.organizations)
-        await organizations.put(record, record.id);
-      for (const record of seed.relationships)
-        await relationships.put(record, record.id);
-      for (const record of seed.attentions)
-        await attentions.put(record, record.id);
-      for (const record of seed.contexts)
-        await contextSnapshots.put(record, record.id);
-      for (const record of seed.interactions)
-        await interactions.put(record, record.id);
-      for (const record of seed.intents) await intents.put(record, record.id);
-      for (const record of seed.plans) await plans.put(record, record.id);
-      for (const record of seed.requirements)
-        await requirements.put(record, record.id);
-      for (const record of seed.work) await workItems.put(record, record.id);
-      for (const record of seed.artifacts)
-        await artifacts.put(record, record.id);
-      for (const record of seed.evidence)
-        await evidenceRecords.put(record, record.id);
-      for (const record of seed.evaluations)
-        await evaluations.put(record, record.id);
-      for (const record of seed.decisions)
-        await decisions.put(record, record.id);
-      for (const record of seed.actions) await actions.put(record, record.id);
-      for (const record of seed.outcomes) await outcomes.put(record, record.id);
-      for (const record of seed.events)
-        await durableEvents.put(record, record.id);
+      try {
+        if ((await attentions.count()) > 0) {
+          await systemStates.put(
+            {
+              id: sentinelId,
+              status: "ready",
+              updated_at: new Date().toISOString(),
+            },
+            sentinelId,
+          );
+          return;
+        }
+
+        const seed = buildSeedData();
+
+        for (const record of seed.people) await people.put(record, record.id);
+        for (const record of seed.organizations)
+          await organizations.put(record, record.id);
+        for (const record of seed.relationships)
+          await relationships.put(record, record.id);
+        for (const record of seed.attentions)
+          await attentions.put(record, record.id);
+        for (const record of seed.contexts)
+          await contextSnapshots.put(record, record.id);
+        for (const record of seed.interactions)
+          await interactions.put(record, record.id);
+        for (const record of seed.intents) await intents.put(record, record.id);
+        for (const record of seed.plans) await plans.put(record, record.id);
+        for (const record of seed.requirements)
+          await requirements.put(record, record.id);
+        for (const record of seed.work) await workItems.put(record, record.id);
+        for (const record of seed.artifacts)
+          await artifacts.put(record, record.id);
+        for (const record of seed.evidence)
+          await evidenceRecords.put(record, record.id);
+        for (const record of seed.evaluations)
+          await evaluations.put(record, record.id);
+        for (const record of seed.decisions)
+          await decisions.put(record, record.id);
+        for (const record of seed.actions) await actions.put(record, record.id);
+        for (const record of seed.outcomes)
+          await outcomes.put(record, record.id);
+        for (const record of seed.events)
+          await durableEvents.put(record, record.id);
+
+        await systemStates.put(
+          {
+            id: sentinelId,
+            status: "ready",
+            updated_at: new Date().toISOString(),
+          },
+          sentinelId,
+        );
+      } catch (error) {
+        await systemStates.put(
+          {
+            id: sentinelId,
+            status: "failed",
+            updated_at: new Date().toISOString(),
+          },
+          sentinelId,
+        );
+        seedPromise = null;
+        throw error;
+      }
     })();
   }
 
@@ -511,6 +571,7 @@ function buildSeedData(): SeedBundle {
       ["req-blocked-identity", "Company identity verified", true, ["ev-blocked-identity"]],
       ["req-blocked-payroll", "Payroll by class code received", false, []],
       ["req-blocked-officer", "Owner/officer inclusion confirmed", false, []],
+      ["req-blocked-submission", "Workers' compensation submission sent", false, []],
     ]),
   ];
 
@@ -851,6 +912,7 @@ function buildSeedData(): SeedBundle {
       missing_requirements: serializeList([
         "Payroll by class code received",
         "Owner/officer inclusion confirmed",
+        "Workers' compensation submission sent",
       ]),
       rationale:
         "Progress cannot continue autonomously until the customer supplies missing underwriting input.",
@@ -1391,7 +1453,9 @@ export async function continueAutonomousWork(attentionId: string) {
   if (!detail?.plan || detail.attentionState === "blocked") return;
 
   const now = new Date().toISOString();
-  const waitingWork = detail.work.find((item) => item.status === "waiting");
+  const waitingWork = detail.work.find((item) =>
+    ["queued", "waiting"].includes(item.status),
+  );
   if (!waitingWork) return;
 
   if (attentionId === "attention-preparing-insurance") {
@@ -1488,6 +1552,82 @@ export async function continueAutonomousWork(attentionId: string) {
     });
   }
 
+  if (attentionId === "attention-blocked-payroll") {
+    const requirement = detail.requirements.find(
+      (item) => item.id === "req-blocked-submission",
+    );
+    if (!requirement) return;
+
+    const [currentRequirement, currentWork] = await Promise.all([
+      requirements.get(requirement.id),
+      workItems.get(waitingWork.id),
+    ]);
+    if (
+      !currentRequirement ||
+      currentRequirement.satisfied ||
+      !currentWork ||
+      !["queued", "waiting"].includes(currentWork.status)
+    ) {
+      return;
+    }
+
+    const evidenceId = "ev-blocked-submission";
+    await evidenceRecords.put(
+      {
+        id: evidenceId,
+        attention: attentionId,
+        requirement: requirement.id,
+        type: "submission_sent",
+        subject: "Workers' compensation submission",
+        value: "Submission sent to carrier after underwriting details were provided.",
+        source: "integration",
+        provenance: "Observed in carrier submission gateway",
+        confidence: 1,
+        created_at: now,
+      },
+      evidenceId,
+    );
+    await requirements.put(
+      {
+        ...currentRequirement,
+        satisfied: true,
+        evidence_ids: serializeList([evidenceId]),
+        updated_at: now,
+      },
+      requirement.id,
+    );
+    await workItems.put(
+      {
+        ...currentWork,
+        status: "completed",
+        output: "Workers' compensation submission sent to carrier.",
+        completed_at: now,
+      },
+      currentWork.id,
+    );
+    if (detail.context) {
+      await contextSnapshots.put(
+        {
+          ...detail.context,
+          known: serializeList([
+            ...parseList(detail.context.known),
+            "Workers' compensation submission sent",
+          ]),
+          updated_at: now,
+        },
+        detail.context.id,
+      );
+    }
+    await putEvent({
+      id: makeEventId("event-work-complete", attentionId),
+      attention: attentionId,
+      type: "work.completed",
+      detail: "Workers' compensation submission resumed automatically.",
+      stage: "work",
+      created_at: now,
+    });
+  }
+
   await upsertEvaluation(attentionId, detail.plan.id);
 }
 
@@ -1507,12 +1647,11 @@ export async function provideBlockedInput(attentionId: string) {
   );
   if (!payrollRequirement || !officerRequirement || !blockedWork) return;
 
-  const [currentPayrollRequirement, currentOfficerRequirement, currentBlockedWork, currentFollowUpWork] =
+  const [currentPayrollRequirement, currentOfficerRequirement, currentBlockedWork] =
     await Promise.all([
       requirements.get(payrollRequirement.id),
       requirements.get(officerRequirement.id),
       workItems.get(blockedWork.id),
-      followUpWork ? workItems.get(followUpWork.id) : Promise.resolve(undefined),
     ]);
   if (
     !currentPayrollRequirement ||
@@ -1604,24 +1743,15 @@ export async function provideBlockedInput(attentionId: string) {
     stage: "evidence",
     created_at: now,
   });
-  if (currentFollowUpWork?.status === "waiting") {
+  if (followUpWork) {
     await workItems.put(
       {
-        ...currentFollowUpWork,
-        status: "completed",
-        output: "Workers' compensation submission sent to carrier.",
-        completed_at: now,
+        ...followUpWork,
+        status: "waiting",
+        output: "Underwriting details received. Submission queued for carrier handoff.",
       },
-      currentFollowUpWork.id,
+      followUpWork.id,
     );
-    await putEvent({
-      id: makeEventId("event-work-complete", attentionId),
-      attention: attentionId,
-      type: "work.completed",
-      detail: "Workers' compensation submission resumed automatically.",
-      stage: "work",
-      created_at: now,
-    });
   }
 
   await upsertEvaluation(attentionId, detail.plan.id);

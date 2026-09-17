@@ -21,6 +21,7 @@ import type {
   Plan,
   Relationship,
   Requirement,
+  SystemState,
   Work,
 } from "@/src/lib/model";
 
@@ -59,4 +60,5 @@ export const evaluations = db.collection<Evaluation>("Evaluation");
 export const decisions = db.collection<Decision>("Decision");
 export const actions = db.collection<Action>("Action");
 export const outcomes = db.collection<Outcome>("Outcome");
+export const systemStates = db.collection<SystemState>("SystemState");
 export const durableEvents = db.collection<DurableEvent>("DurableEvent");

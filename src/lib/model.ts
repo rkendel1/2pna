@@ -209,6 +209,12 @@ export interface Outcome {
   generates_new_attention: boolean;
 }
 
+export interface SystemState {
+  id: string;
+  status: "seeding" | "ready" | "failed";
+  updated_at: string;
+}
+
 export interface DurableEvent {
   id: string;
   attention: string;
