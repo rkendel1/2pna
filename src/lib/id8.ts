@@ -78,6 +78,8 @@ const parseList = (value?: string) =>
   value ? (JSON.parse(value) as string[]) : [];
 
 const serializeList = (value: string[]) => JSON.stringify(value);
+const makeEventId = (prefix: string, attentionId: string) =>
+  `${prefix}-${attentionId}-${crypto.randomUUID()}`;
 
 async function ensureSeedData() {
   if (!seedPromise) {
@@ -1257,7 +1259,7 @@ async function upsertEvaluation(attentionId: string, planId: string) {
 
   await evaluations.put(evaluation, evaluation.id);
   await putEvent({
-    id: `event-evaluation-${attentionId}-${Date.now()}`,
+    id: makeEventId("event-evaluation", attentionId),
     attention: attentionId,
     type: "evaluation.completed",
     detail: evaluation.rationale,
@@ -1437,7 +1439,7 @@ export async function continueAutonomousWork(attentionId: string) {
       );
     }
     await putEvent({
-      id: `event-work-complete-${attentionId}`,
+      id: makeEventId("event-work-complete", attentionId),
       attention: attentionId,
       type: "work.completed",
       detail: "Workers' compensation quote retrieved autonomously.",
@@ -1457,7 +1459,7 @@ export async function continueAutonomousWork(attentionId: string) {
       waitingWork.id,
     );
     await putEvent({
-      id: `event-work-complete-${attentionId}`,
+      id: makeEventId("event-work-complete", attentionId),
       attention: attentionId,
       type: "work.completed",
       detail: "Submission sent after blocked information was supplied.",
@@ -1480,6 +1482,9 @@ export async function provideBlockedInput(attentionId: string) {
     (item) => item.id === "req-blocked-officer",
   );
   const blockedWork = detail.work.find((item) => item.status === "blocked");
+  const followUpWork = detail.work.find(
+    (item) => item.id === "work-blocked-review-submission",
+  );
   if (!payrollRequirement || !officerRequirement || !blockedWork) return;
 
   const now = new Date().toISOString();
@@ -1553,7 +1558,7 @@ export async function provideBlockedInput(attentionId: string) {
     );
   }
   await putEvent({
-    id: `event-unblocked-${attentionId}`,
+    id: makeEventId("event-unblocked", attentionId),
     attention: attentionId,
     type: "evidence.created",
     detail:
@@ -1561,6 +1566,25 @@ export async function provideBlockedInput(attentionId: string) {
     stage: "evidence",
     created_at: now,
   });
+  if (followUpWork) {
+    await workItems.put(
+      {
+        ...followUpWork,
+        status: "completed",
+        output: "Workers' compensation submission sent to carrier.",
+        completed_at: now,
+      },
+      followUpWork.id,
+    );
+    await putEvent({
+      id: makeEventId("event-work-complete", attentionId),
+      attention: attentionId,
+      type: "work.completed",
+      detail: "Workers' compensation submission resumed automatically.",
+      stage: "work",
+      created_at: now,
+    });
+  }
 
   await upsertEvaluation(attentionId, detail.plan.id);
 }
@@ -1616,7 +1640,7 @@ export async function completeDecision(
     outcomeId,
   );
   await putEvent({
-    id: `event-decision-made-${attentionId}`,
+    id: makeEventId("event-decision-made", attentionId),
     attention: attentionId,
     type: "decision.made",
     detail: `${decisionLabels[decisionType]} selected.`,
@@ -1624,7 +1648,7 @@ export async function completeDecision(
     created_at: now,
   });
   await putEvent({
-    id: `event-outcome-${attentionId}`,
+    id: makeEventId("event-outcome", attentionId),
     attention: attentionId,
     type: "outcome.created",
     detail: `${decisionLabels[decisionType]} outcome recorded.`,

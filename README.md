@@ -7,7 +7,7 @@ ID8 is a Next.js showcase for a decision-readiness engine backed by FeltDB.
 - Next.js app router
 - React
 - `@feltdb/core@0.11.1` using the Node runtime
-- Authoritative schema in `/home/runner/work/2pna/2pna/feltdb.flow`
+- Authoritative schema in `./feltdb.flow`
 
 ## Run
 
