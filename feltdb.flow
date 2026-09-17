@@ -1,0 +1,265 @@
+flow_version 1
+
+app id8 {
+  collection Person {
+    name: text
+    title: text
+    email: text
+    created_at: datetime
+    index email using hash(email)
+  }
+
+  collection Organization {
+    name: text
+    industry: text
+    location: text
+    created_at: datetime
+  }
+
+  collection Relationship {
+    person: ref Person
+    organization: ref Organization
+    type: text
+    summary: text
+    created_at: datetime
+    index person using hash(person)
+    index organization using hash(organization)
+  }
+
+  collection Attention {
+    type: text
+    source: text
+    subject: text
+    raw_data: text
+    occurred_at: datetime
+    status: text
+    person: ref Person
+    organization: ref Organization
+    index status using hash(status)
+  }
+
+  collection ContextSnapshot {
+    attention: ref Attention
+    status: text
+    summary: text
+    known: text
+    inferred: text
+    unknown: text
+    previous_interactions: number
+    created_at: datetime
+    updated_at: datetime
+    index attention using hash(attention)
+  }
+
+  collection Interaction {
+    attention: ref Attention
+    channel: text
+    summary: text
+    occurred_at: datetime
+    index attention using hash(attention)
+  }
+
+  collection Intent {
+    attention: ref Attention
+    type: text
+    description: text
+    confidence: number
+    source: text
+    status: text
+    created_at: datetime
+    updated_at: datetime
+    index attention using hash(attention)
+  }
+
+  collection Plan {
+    attention: ref Attention
+    intent: ref Intent
+    objective: text
+    status: text
+    created_at: datetime
+    updated_at: datetime
+    index attention using hash(attention)
+  }
+
+  collection Requirement {
+    plan: ref Plan
+    type: text
+    description: text
+    required: boolean
+    satisfied: boolean
+    evidence_ids: text
+    created_at: datetime
+    updated_at: datetime
+    index plan using hash(plan)
+  }
+
+  collection Work {
+    plan: ref Plan
+    requirement: ref Requirement
+    type: text
+    actor: text
+    status: text
+    input: text
+    output: text
+    provenance: text
+    started_at: datetime
+    completed_at: datetime
+    blocking_reason: text
+    attempted_automation: text
+    required_human_input: text
+    index plan using hash(plan)
+    index status using hash(status)
+  }
+
+  collection Artifact {
+    attention: ref Attention
+    type: text
+    title: text
+    source: text
+    raw_content: text
+    created_at: datetime
+    index attention using hash(attention)
+  }
+
+  collection Evidence {
+    attention: ref Attention
+    requirement: ref Requirement
+    type: text
+    subject: text
+    value: text
+    source: text
+    provenance: text
+    confidence: number
+    artifact: ref Artifact
+    created_at: datetime
+    index attention using hash(attention)
+    index requirement using hash(requirement)
+  }
+
+  collection Evaluation {
+    plan: ref Plan
+    attention: ref Attention
+    status: text
+    satisfied_requirements: text
+    missing_requirements: text
+    rationale: text
+    evidence_ids: text
+    evaluated_at: datetime
+    index attention using hash(attention)
+  }
+
+  collection Decision {
+    attention: ref Attention
+    plan: ref Plan
+    title: text
+    summary: text
+    requires_human_judgment: boolean
+    available_actions: text
+    status: text
+    selected_action: text
+    decided_at: datetime
+    created_at: datetime
+    updated_at: datetime
+    index attention using hash(attention)
+  }
+
+  collection Action {
+    decision: ref Decision
+    attention: ref Attention
+    type: text
+    parameters: text
+    status: text
+    result: text
+    executed_at: datetime
+    index attention using hash(attention)
+  }
+
+  collection Outcome {
+    attention: ref Attention
+    action: ref Action
+    summary: text
+    created_at: datetime
+    generates_new_attention: boolean
+    index attention using hash(attention)
+  }
+
+  collection SystemState {
+    status: text
+    updated_at: datetime
+  }
+
+  collection DurableEvent {
+    attention: ref Attention
+    type: text
+    detail: text
+    stage: text
+    created_at: datetime
+    index attention using hash(attention)
+  }
+
+  capability SituationReadModel {
+    visibility public
+    read Person
+    read Organization
+    read Relationship
+    read Attention
+    read ContextSnapshot
+    read Interaction
+    read Intent
+    read Plan
+    read Requirement
+    read Work
+    read Artifact
+    read Evidence
+    read Evaluation
+    read Decision
+    read Action
+    read Outcome
+    read DurableEvent
+  }
+
+  capability SituationAutomation {
+    visibility internal
+    write Work
+    write Evidence
+    write Evaluation
+    write Decision
+    write Action
+    write Outcome
+    write DurableEvent
+  }
+
+  workflow EvaluateReadiness {
+    step read_situation {
+      capability SituationReadModel
+    }
+    step persist_evaluation {
+      capability SituationAutomation
+    }
+  }
+
+  agent SituationCoordinator {
+    capability SituationReadModel
+    capability SituationAutomation
+    workflow EvaluateReadiness
+  }
+
+  policy Person { read: authenticated write: authenticated }
+  policy Organization { read: authenticated write: authenticated }
+  policy Relationship { read: authenticated write: authenticated }
+  policy Attention { read: authenticated write: authenticated }
+  policy ContextSnapshot { read: authenticated write: authenticated }
+  policy Interaction { read: authenticated write: authenticated }
+  policy Intent { read: authenticated write: authenticated }
+  policy Plan { read: authenticated write: authenticated }
+  policy Requirement { read: authenticated write: authenticated }
+  policy Work { read: authenticated write: authenticated }
+  policy Artifact { read: authenticated write: authenticated }
+  policy Evidence { read: authenticated write: authenticated }
+  policy Evaluation { read: authenticated write: authenticated }
+  policy Decision { read: authenticated write: authenticated }
+  policy Action { read: authenticated write: authenticated }
+  policy Outcome { read: authenticated write: authenticated }
+  policy SystemState { read: authenticated write: authenticated }
+  policy DurableEvent { read: authenticated write: authenticated }
+}
