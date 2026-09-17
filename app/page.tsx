@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 const COLUMN_ORDER = [
   "new",
   "preparing",
+  "blocked",
   "ready",
   "decision",
   "done",
@@ -14,6 +15,8 @@ const COLUMN_ORDER = [
 const COLUMN_COPY: Record<(typeof COLUMN_ORDER)[number], string> = {
   new: "Incoming situations that are still being understood.",
   preparing: "ID8 is actively researching, coordinating, and collecting evidence.",
+  blocked:
+    "Exceptions only. These items explain what is missing, what was attempted, and the exact human input still required.",
   ready: "Preparation is complete and the situation package is ready for inspection.",
   decision: "Human judgment is required now.",
   done: "Decision, action, and outcome are all recorded.",
@@ -92,7 +95,10 @@ export default async function Home() {
 
       <section className="board">
         {COLUMN_ORDER.map((column) => (
-          <section className="column" key={column}>
+          <section
+            className={`column ${column === "blocked" ? "blocked-column" : ""}`}
+            key={column}
+          >
             <header className="column-header">
               <div>
                 <p className="column-label">{column}</p>
@@ -139,42 +145,14 @@ export default async function Home() {
                     </div>
                   </dl>
                   <p className="reason">{situation.statusReason}</p>
+                  {column === "blocked" && situation.blockedExplanation ? (
+                    <p className="reason">{situation.blockedExplanation}</p>
+                  ) : null}
                 </Link>
               ))}
             </div>
           </section>
         ))}
-      </section>
-
-      <section className="blocked-panel">
-        <header className="column-header">
-          <div>
-            <p className="column-label">blocked</p>
-            <h2>BLOCKED</h2>
-          </div>
-          <span>{board.columns.blocked.length}</span>
-        </header>
-        <p className="column-copy">
-          Exceptions only. Each card explains what is missing, what ID8 tried,
-          and the exact human input required.
-        </p>
-        <div className="column-stack blocked-stack">
-          {board.columns.blocked.map((situation) => (
-            <Link
-              className="card blocked-card"
-              href={`/situations/${situation.id}`}
-              key={situation.id}
-            >
-              <div className="card-topline">
-                <span className="badge badge-blocked">blocked</span>
-                <span className="subtle">{situation.lifecycleState}</span>
-              </div>
-              <h3>{situation.subject}</h3>
-              <p className="card-copy">{situation.statusReason}</p>
-              <p className="reason">{situation.blockedExplanation}</p>
-            </Link>
-          ))}
-        </div>
       </section>
     </main>
   );

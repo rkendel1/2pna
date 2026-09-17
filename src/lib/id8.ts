@@ -69,6 +69,8 @@ const decisionLabels: Record<DecisionChoice, string> = {
   defer: "Defer",
 };
 
+let seedPromise: Promise<void> | null = null;
+
 const isoHoursAgo = (hoursAgo: number) =>
   new Date(Date.now() - hoursAgo * 60 * 60 * 1000).toISOString();
 
@@ -78,29 +80,46 @@ const parseList = (value?: string) =>
 const serializeList = (value: string[]) => JSON.stringify(value);
 
 async function ensureSeedData() {
-  if ((await attentions.count()) > 0) {
-    return;
+  if (!seedPromise) {
+    seedPromise = (async () => {
+      if ((await attentions.count()) > 0) {
+        return;
+      }
+
+      const seed = buildSeedData();
+
+      for (const record of seed.people) await people.put(record, record.id);
+      for (const record of seed.organizations)
+        await organizations.put(record, record.id);
+      for (const record of seed.relationships)
+        await relationships.put(record, record.id);
+      for (const record of seed.attentions)
+        await attentions.put(record, record.id);
+      for (const record of seed.contexts)
+        await contextSnapshots.put(record, record.id);
+      for (const record of seed.interactions)
+        await interactions.put(record, record.id);
+      for (const record of seed.intents) await intents.put(record, record.id);
+      for (const record of seed.plans) await plans.put(record, record.id);
+      for (const record of seed.requirements)
+        await requirements.put(record, record.id);
+      for (const record of seed.work) await workItems.put(record, record.id);
+      for (const record of seed.artifacts)
+        await artifacts.put(record, record.id);
+      for (const record of seed.evidence)
+        await evidenceRecords.put(record, record.id);
+      for (const record of seed.evaluations)
+        await evaluations.put(record, record.id);
+      for (const record of seed.decisions)
+        await decisions.put(record, record.id);
+      for (const record of seed.actions) await actions.put(record, record.id);
+      for (const record of seed.outcomes) await outcomes.put(record, record.id);
+      for (const record of seed.events)
+        await durableEvents.put(record, record.id);
+    })();
   }
 
-  const seed = buildSeedData();
-
-  for (const record of seed.people) await people.put(record, record.id);
-  for (const record of seed.organizations) await organizations.put(record, record.id);
-  for (const record of seed.relationships) await relationships.put(record, record.id);
-  for (const record of seed.attentions) await attentions.put(record, record.id);
-  for (const record of seed.contexts) await contextSnapshots.put(record, record.id);
-  for (const record of seed.interactions) await interactions.put(record, record.id);
-  for (const record of seed.intents) await intents.put(record, record.id);
-  for (const record of seed.plans) await plans.put(record, record.id);
-  for (const record of seed.requirements) await requirements.put(record, record.id);
-  for (const record of seed.work) await workItems.put(record, record.id);
-  for (const record of seed.artifacts) await artifacts.put(record, record.id);
-  for (const record of seed.evidence) await evidenceRecords.put(record, record.id);
-  for (const record of seed.evaluations) await evaluations.put(record, record.id);
-  for (const record of seed.decisions) await decisions.put(record, record.id);
-  for (const record of seed.actions) await actions.put(record, record.id);
-  for (const record of seed.outcomes) await outcomes.put(record, record.id);
-  for (const record of seed.events) await durableEvents.put(record, record.id);
+  await seedPromise;
 }
 
 function buildSeedData(): SeedBundle {
@@ -1090,9 +1109,11 @@ function latestStage(detail: {
   evidence: Evidence[];
   evaluation?: Evaluation;
   decision?: Decision;
+  actions: Action[];
   outcomes: Outcome[];
 }): LifecycleState {
   if (detail.outcomes.length > 0) return "outcome";
+  if (detail.actions.length > 0) return "action";
   if (detail.decision) return "decision";
   if (detail.evaluation) return "evaluation";
   if (detail.evidence.length > 0) return "evidence";
@@ -1204,6 +1225,9 @@ async function upsertEvaluation(attentionId: string, planId: string) {
     evidenceRecords.find({ attention: attentionId }),
   ]);
 
+  const planRequirementIds = new Set(
+    (planRequirements as Requirement[]).map((item) => item.id),
+  );
   const missing = (planRequirements as Requirement[])
     .filter((item) => !item.satisfied)
     .map((item) => item.description);
@@ -1224,7 +1248,9 @@ async function upsertEvaluation(attentionId: string, planId: string) {
         ? "All required evidence is present."
         : `Still missing: ${missing.join(", ")}.`,
     evidence_ids: serializeList(
-      (relatedEvidence as Evidence[]).map((item) => item.id),
+      (relatedEvidence as Evidence[])
+        .filter((item) => planRequirementIds.has(item.requirement))
+        .map((item) => item.id),
     ),
     evaluated_at: now,
   };
@@ -1392,6 +1418,24 @@ export async function continueAutonomousWork(attentionId: string) {
       },
       waitingWork.id,
     );
+    if (detail.context) {
+      await contextSnapshots.put(
+        {
+          ...detail.context,
+          known: serializeList([
+            ...parseList(detail.context.known),
+            "Workers' compensation quote received",
+          ]),
+          unknown: serializeList(
+            parseList(detail.context.unknown).filter(
+              (item) => item !== "Workers' compensation quote response",
+            ),
+          ),
+          updated_at: now,
+        },
+        detail.context.id,
+      );
+    }
     await putEvent({
       id: `event-work-complete-${attentionId}`,
       attention: attentionId,
@@ -1493,6 +1537,21 @@ export async function provideBlockedInput(attentionId: string) {
     },
     blockedWork.id,
   );
+  if (detail.context) {
+    await contextSnapshots.put(
+      {
+        ...detail.context,
+        known: serializeList([
+          ...parseList(detail.context.known),
+          "Payroll by class code received",
+          "Owner/officer inclusion confirmed",
+        ]),
+        unknown: serializeList([]),
+        updated_at: now,
+      },
+      detail.context.id,
+    );
+  }
   await putEvent({
     id: `event-unblocked-${attentionId}`,
     attention: attentionId,

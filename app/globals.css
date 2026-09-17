@@ -146,7 +146,7 @@ button {
 }
 
 .board {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   align-items: start;
 }
 
@@ -178,6 +178,11 @@ button {
 }
 
 .blocked-card {
+  border-color: #e8c9c2;
+  background: #fff7f4;
+}
+
+.blocked-column {
   border-color: #e8c9c2;
   background: #fff7f4;
 }
@@ -266,10 +271,6 @@ button {
 .reason {
   margin: 0.2rem 0 0;
   font-size: 0.9rem;
-}
-
-.blocked-panel {
-  margin-top: 1.5rem;
 }
 
 .detail-shell {
