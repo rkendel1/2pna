@@ -1395,8 +1395,23 @@ export async function continueAutonomousWork(attentionId: string) {
   if (!waitingWork) return;
 
   if (attentionId === "attention-preparing-insurance") {
-    const requirement = detail.requirements.find((item) => item.id === "req-prep-wc");
+    const requirement = detail.requirements.find(
+      (item) => item.id === "req-prep-wc",
+    );
     if (!requirement) return;
+
+    const [currentRequirement, currentWork] = await Promise.all([
+      requirements.get(requirement.id),
+      workItems.get(waitingWork.id),
+    ]);
+    if (
+      !currentRequirement ||
+      currentRequirement.satisfied ||
+      !currentWork ||
+      currentWork.status !== "waiting"
+    ) {
+      return;
+    }
 
     const evidenceId = "ev-prep-wc";
     await evidenceRecords.put(
@@ -1416,7 +1431,7 @@ export async function continueAutonomousWork(attentionId: string) {
     );
     await requirements.put(
       {
-        ...requirement,
+        ...currentRequirement,
         satisfied: true,
         evidence_ids: serializeList([evidenceId]),
         updated_at: now,
@@ -1425,7 +1440,7 @@ export async function continueAutonomousWork(attentionId: string) {
     );
     await workItems.put(
       {
-        ...waitingWork,
+        ...currentWork,
         status: "completed",
         output: "Workers' compensation quote retrieved.",
         completed_at: now,
@@ -1479,6 +1494,24 @@ export async function provideBlockedInput(attentionId: string) {
   );
   if (!payrollRequirement || !officerRequirement || !blockedWork) return;
 
+  const [currentPayrollRequirement, currentOfficerRequirement, currentBlockedWork, currentFollowUpWork] =
+    await Promise.all([
+      requirements.get(payrollRequirement.id),
+      requirements.get(officerRequirement.id),
+      workItems.get(blockedWork.id),
+      followUpWork ? workItems.get(followUpWork.id) : Promise.resolve(undefined),
+    ]);
+  if (
+    !currentPayrollRequirement ||
+    !currentOfficerRequirement ||
+    currentPayrollRequirement.satisfied ||
+    currentOfficerRequirement.satisfied ||
+    !currentBlockedWork ||
+    currentBlockedWork.status !== "blocked"
+  ) {
+    return;
+  }
+
   const now = new Date().toISOString();
   const payrollEvidence: Evidence = {
     id: "ev-blocked-payroll",
@@ -1509,7 +1542,7 @@ export async function provideBlockedInput(attentionId: string) {
   await evidenceRecords.put(officerEvidence, officerEvidence.id);
   await requirements.put(
     {
-      ...payrollRequirement,
+      ...currentPayrollRequirement,
       satisfied: true,
       evidence_ids: serializeList([payrollEvidence.id]),
       updated_at: now,
@@ -1518,7 +1551,7 @@ export async function provideBlockedInput(attentionId: string) {
   );
   await requirements.put(
     {
-      ...officerRequirement,
+      ...currentOfficerRequirement,
       satisfied: true,
       evidence_ids: serializeList([officerEvidence.id]),
       updated_at: now,
@@ -1527,7 +1560,7 @@ export async function provideBlockedInput(attentionId: string) {
   );
   await workItems.put(
     {
-      ...blockedWork,
+      ...currentBlockedWork,
       status: "completed",
       output: "Customer supplied missing underwriting details.",
       completed_at: now,
@@ -1558,15 +1591,15 @@ export async function provideBlockedInput(attentionId: string) {
     stage: "evidence",
     created_at: now,
   });
-  if (followUpWork) {
+  if (currentFollowUpWork?.status === "waiting") {
     await workItems.put(
       {
-        ...followUpWork,
+        ...currentFollowUpWork,
         status: "completed",
         output: "Workers' compensation submission sent to carrier.",
         completed_at: now,
       },
-      followUpWork.id,
+      currentFollowUpWork.id,
     );
     await putEvent({
       id: makeEventId("event-work-complete", attentionId),

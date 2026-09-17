@@ -23,6 +23,17 @@ button {
   font: inherit;
 }
 
+a:hover,
+button:hover {
+  opacity: 0.92;
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 3px solid #2d825a;
+  outline-offset: 3px;
+}
+
 .shell {
   max-width: 1500px;
   margin: 0 auto;
