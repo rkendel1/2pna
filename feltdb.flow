@@ -195,7 +195,6 @@ app id8 {
     stage: text
     created_at: datetime
     index attention using hash(attention)
-    index created_at using sorted(created_at)
   }
 
   capability SituationReadModel {

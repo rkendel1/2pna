@@ -1450,20 +1450,19 @@ export async function getSituation(attentionId: string) {
 
 export async function continueAutonomousWork(attentionId: string) {
   const detail = await loadDetail(attentionId);
-  if (!detail?.plan || detail.attentionState === "blocked") return;
+  if (!detail?.plan) return;
 
   const now = new Date().toISOString();
-  const waitingWork = detail.work.find((item) =>
-    ["queued", "waiting"].includes(item.status),
-  );
-  if (!waitingWork) return;
 
   if (attentionId === "attention-preparing-insurance") {
     const requirement = detail.requirements.find(
       (item) => item.id === "req-prep-wc",
     );
+    const waitingWork = detail.work.find(
+      (item) => item.id === "work-prep-retrieve-wc",
+    );
     const qcWork = detail.work.find((item) => item.id === "work-prep-premium-qc");
-    if (!requirement) return;
+    if (!requirement || !waitingWork) return;
 
     const [currentRequirement, currentWork, currentQcWork] = await Promise.all([
       requirements.get(requirement.id),
@@ -1556,11 +1555,20 @@ export async function continueAutonomousWork(attentionId: string) {
     const requirement = detail.requirements.find(
       (item) => item.id === "req-blocked-submission",
     );
-    if (!requirement) return;
+    const submissionWork = detail.work.find(
+      (item) => item.id === "work-blocked-review-submission",
+    );
+    if (
+      !requirement ||
+      !submissionWork ||
+      detail.work.some((item) => item.status === "blocked")
+    ) {
+      return;
+    }
 
     const [currentRequirement, currentWork] = await Promise.all([
       requirements.get(requirement.id),
-      workItems.get(waitingWork.id),
+      workItems.get(submissionWork.id),
     ]);
     if (
       !currentRequirement ||
@@ -1603,7 +1611,7 @@ export async function continueAutonomousWork(attentionId: string) {
         output: "Workers' compensation submission sent to carrier.",
         completed_at: now,
       },
-      currentWork.id,
+      submissionWork.id,
     );
     if (detail.context) {
       await contextSnapshots.put(
