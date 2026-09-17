@@ -1583,9 +1583,10 @@ export async function getBoard() {
     metrics: {
       total: summaries.length,
       activeWork: summaries.reduce(
-        (total, summary) =>
-          total +
-          Number.parseInt(summary.activeWorkSummary, 10) || 0,
+        (total, summary) => {
+          const activeCount = Number.parseInt(summary.activeWorkSummary, 10);
+          return total + (Number.isNaN(activeCount) ? 0 : activeCount);
+        },
         0,
       ),
       decisionReady: columns.ready.length + columns.decision.length,
@@ -1632,7 +1633,7 @@ export async function continueAutonomousWork(attentionId: string) {
       {
         id: evidenceId,
         attention: attentionId,
-        requirement: requirement.id,
+        requirement: currentRequirement.id,
         type: "quote_received",
         subject: "Workers' Compensation",
         value: "$14,200 annual premium",
@@ -1650,7 +1651,7 @@ export async function continueAutonomousWork(attentionId: string) {
         evidence_ids: serializeList([evidenceId]),
         updated_at: now,
       },
-      requirement.id,
+      currentRequirement.id,
     );
     await workItems.put(
       {
@@ -1701,24 +1702,13 @@ export async function continueAutonomousWork(attentionId: string) {
   }
 
   if (attentionId === "attention-blocked-payroll") {
-    const requirement = detail.requirements.find(
-      (item) => item.id === "req-blocked-submission",
-    );
-    const submissionWork = detail.work.find(
-      (item) => item.id === "work-blocked-review-submission",
-    );
-    if (
-      !requirement ||
-      !submissionWork
-    ) {
-      return;
-    }
-
-    const [currentRequirement, currentWork, currentBlockedWork] = await Promise.all([
-      requirements.get(requirement.id),
-      workItems.get(submissionWork.id),
-      workItems.get("work-blocked-request-payroll"),
-    ]);
+    const [currentRequirement, currentWork, currentBlockedWork, currentContext] =
+      await Promise.all([
+        requirements.get("req-blocked-submission"),
+        workItems.get("work-blocked-review-submission"),
+        workItems.get("work-blocked-request-payroll"),
+        detail.context ? contextSnapshots.get(detail.context.id) : undefined,
+      ]);
     if (
       !currentRequirement ||
       currentRequirement.satisfied ||
@@ -1734,7 +1724,7 @@ export async function continueAutonomousWork(attentionId: string) {
       {
         id: evidenceId,
         attention: attentionId,
-        requirement: requirement.id,
+        requirement: currentRequirement.id,
         type: "submission_sent",
         subject: "Workers' compensation submission",
         value: "Submission sent to carrier after underwriting details were provided.",
@@ -1752,7 +1742,7 @@ export async function continueAutonomousWork(attentionId: string) {
         evidence_ids: serializeList([evidenceId]),
         updated_at: now,
       },
-      requirement.id,
+      currentRequirement.id,
     );
     await workItems.put(
       {
@@ -1761,19 +1751,19 @@ export async function continueAutonomousWork(attentionId: string) {
         output: "Workers' compensation submission sent to carrier.",
         completed_at: now,
       },
-      submissionWork.id,
+      currentWork.id,
     );
-    if (detail.context) {
+    if (currentContext) {
       await contextSnapshots.put(
         {
-          ...detail.context,
+          ...currentContext,
           known: serializeList([
-            ...parseList(detail.context.known),
+            ...parseList(currentContext.known),
             "Workers' compensation submission sent",
           ]),
           updated_at: now,
         },
-        detail.context.id,
+        currentContext.id,
       );
     }
     await putEvent({
