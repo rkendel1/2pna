@@ -94,6 +94,31 @@ const serializeList = (value: string[]) => JSON.stringify(value);
 const makeEventId = (prefix: string, attentionId: string) =>
   `${prefix}-${attentionId}-${crypto.randomUUID()}`;
 
+const groupBy = <T,>(items: T[], key: (item: T) => string | undefined) => {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const groupKey = key(item);
+    if (!groupKey) continue;
+    const group = groups.get(groupKey);
+    if (group) {
+      group.push(item);
+    } else {
+      groups.set(groupKey, [item]);
+    }
+  }
+  return groups;
+};
+
+const latestBy = <T,>(
+  items: T[],
+  getTimestamp: (item: T) => string | undefined,
+) =>
+  items.reduce<T | undefined>((latest, current) => {
+    const currentTime = getTimestamp(current) ?? "";
+    const latestTime = latest ? getTimestamp(latest) ?? "" : "";
+    return currentTime > latestTime ? current : latest;
+  }, undefined);
+
 async function ensureSeedData() {
   if (!seedPromise) {
     seedPromise = (async () => {
@@ -1263,6 +1288,30 @@ function buildSummary(detail: Omit<SituationDetail, keyof SituationSummary>): Si
   };
 }
 
+function buildBoardSummary(params: {
+  attention: Attention;
+  context?: ContextSnapshot;
+  intent?: Intent;
+  plan?: Plan;
+  relationship?: Relationship;
+  requirements: Requirement[];
+  work: Work[];
+  evidence: Evidence[];
+  evaluation?: Evaluation;
+  decision?: Decision;
+  actions: Action[];
+  outcomes: Outcome[];
+  person?: Person;
+  organization?: Organization;
+}) {
+  return buildSummary({
+    ...params,
+    artifacts: [],
+    interactions: [],
+    timeline: [],
+  });
+}
+
 async function loadBase(attentionId: string) {
   await ensureSeedData();
   const [attention, allContexts, allIntents, allPlans, allRequirements, allWork, allEvidence] =
@@ -1405,14 +1454,116 @@ async function loadDetail(attentionId: string): Promise<SituationDetail | null> 
 
 export async function getBoard() {
   await ensureSeedData();
-  const allAttentions = (await attentions.all()) as Attention[];
-  const details = (
-    await Promise.all(allAttentions.map((attention) => loadDetail(attention.id)))
-  )
-    .filter(Boolean)
-    .sort((left, right) =>
-      right!.attention.occurred_at.localeCompare(left!.attention.occurred_at),
-    ) as SituationDetail[];
+  const [
+    attentionList,
+    contextList,
+    intentList,
+    planList,
+    requirementList,
+    workList,
+    evidenceList,
+    evaluationList,
+    decisionList,
+    actionList,
+    outcomeList,
+    personList,
+    organizationList,
+    relationshipList,
+  ] = await Promise.all([
+    attentions.all(),
+    contextSnapshots.all(),
+    intents.all(),
+    plans.all(),
+    requirements.all(),
+    workItems.all(),
+    evidenceRecords.all(),
+    evaluations.all(),
+    decisions.all(),
+    actions.all(),
+    outcomes.all(),
+    people.all(),
+    organizations.all(),
+    relationships.all(),
+  ]);
+
+  const contextsByAttention = new Map(
+    (contextList as ContextSnapshot[]).map((item) => [item.attention, item]),
+  );
+  const intentsByAttention = new Map(
+    (intentList as Intent[]).map((item) => [item.attention, item]),
+  );
+  const plansByAttention = new Map(
+    (planList as Plan[]).map((item) => [item.attention, item]),
+  );
+  const requirementsByPlan = groupBy(
+    requirementList as Requirement[],
+    (item) => item.plan,
+  );
+  const workByPlan = groupBy(workList as Work[], (item) => item.plan);
+  const evidenceByAttention = groupBy(
+    evidenceList as Evidence[],
+    (item) => item.attention,
+  );
+  const evaluationsByAttention = groupBy(
+    evaluationList as Evaluation[],
+    (item) => item.attention,
+  );
+  const decisionsByAttention = groupBy(
+    decisionList as Decision[],
+    (item) => item.attention,
+  );
+  const actionsByAttention = groupBy(actionList as Action[], (item) => item.attention);
+  const outcomesByAttention = groupBy(
+    outcomeList as Outcome[],
+    (item) => item.attention,
+  );
+  const peopleById = new Map((personList as Person[]).map((item) => [item.id, item]));
+  const organizationsById = new Map(
+    (organizationList as Organization[]).map((item) => [item.id, item]),
+  );
+  const relationshipsByKey = new Map(
+    (relationshipList as Relationship[]).map((item) => [
+      `${item.person}:${item.organization}`,
+      item,
+    ]),
+  );
+
+  const summaries = (attentionList as Attention[])
+    .sort((left, right) => right.occurred_at.localeCompare(left.occurred_at))
+    .map((attention) => {
+      const plan = plansByAttention.get(attention.id);
+      const person = attention.person ? peopleById.get(attention.person) : undefined;
+      const organization = attention.organization
+        ? organizationsById.get(attention.organization)
+        : undefined;
+      return buildBoardSummary({
+        attention,
+        context: contextsByAttention.get(attention.id),
+        intent: intentsByAttention.get(attention.id),
+        plan,
+        relationship:
+          attention.person && attention.organization
+            ? relationshipsByKey.get(
+                `${attention.person}:${attention.organization}`,
+              )
+            : undefined,
+        requirements: plan ? requirementsByPlan.get(plan.id) ?? [] : [],
+        work: plan ? workByPlan.get(plan.id) ?? [] : [],
+        evidence: evidenceByAttention.get(attention.id) ?? [],
+        evaluation: latestBy(
+          evaluationsByAttention.get(attention.id) ?? [],
+          (item) => item.evaluated_at,
+        ),
+        decision: latestBy(
+          decisionsByAttention.get(attention.id) ?? [],
+          (item) => item.updated_at,
+        ),
+        actions: actionsByAttention.get(attention.id) ?? [],
+        outcomes: outcomesByAttention.get(attention.id) ?? [],
+        person,
+        organization,
+      });
+    });
 
   const columns: Record<HumanAttentionState, SituationSummary[]> = {
     new: [],
@@ -1423,20 +1574,18 @@ export async function getBoard() {
     done: [],
   };
 
-  for (const detail of details) {
-    columns[detail.attentionState].push(buildSummary(detail));
+  for (const summary of summaries) {
+    columns[summary.attentionState].push(summary);
   }
 
   return {
     columns,
     metrics: {
-      total: details.length,
-      activeWork: details.reduce(
-        (total, detail) =>
+      total: summaries.length,
+      activeWork: summaries.reduce(
+        (total, summary) =>
           total +
-          detail.work.filter((item) =>
-            ["queued", "running", "waiting", "blocked"].includes(item.status),
-          ).length,
+          Number.parseInt(summary.activeWorkSummary, 10) || 0,
         0,
       ),
       decisionReady: columns.ready.length + columns.decision.length,
@@ -1560,20 +1709,21 @@ export async function continueAutonomousWork(attentionId: string) {
     );
     if (
       !requirement ||
-      !submissionWork ||
-      detail.work.some((item) => item.status === "blocked")
+      !submissionWork
     ) {
       return;
     }
 
-    const [currentRequirement, currentWork] = await Promise.all([
+    const [currentRequirement, currentWork, currentBlockedWork] = await Promise.all([
       requirements.get(requirement.id),
       workItems.get(submissionWork.id),
+      workItems.get("work-blocked-request-payroll"),
     ]);
     if (
       !currentRequirement ||
       currentRequirement.satisfied ||
       !currentWork ||
+      currentBlockedWork?.status === "blocked" ||
       !["queued", "waiting"].includes(currentWork.status)
     ) {
       return;

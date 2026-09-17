@@ -27,6 +27,11 @@ button:hover {
   opacity: 0.92;
 }
 
+a:active,
+button:active {
+  opacity: 0.92;
+}
+
 a:focus-visible,
 button:focus-visible {
   outline: 3px solid #2d825a;
