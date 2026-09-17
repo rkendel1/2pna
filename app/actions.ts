@@ -4,9 +4,9 @@ import { revalidatePath } from "next/cache";
 import {
   completeDecision,
   continueAutonomousWork,
+  isDecisionChoice,
   provideBlockedInput,
 } from "@/src/lib/id8";
-import type { DecisionChoice } from "@/src/lib/model";
 
 const refresh = (attentionId: string) => {
   revalidatePath("/");
@@ -27,7 +27,10 @@ export async function unblockSituation(formData: FormData) {
 
 export async function decideSituation(formData: FormData) {
   const attentionId = String(formData.get("attentionId") ?? "");
-  const decision = String(formData.get("decision") ?? "") as DecisionChoice;
+  const decision = String(formData.get("decision") ?? "");
+  if (!isDecisionChoice(decision)) {
+    return;
+  }
   await completeDecision(attentionId, decision);
   refresh(attentionId);
 }

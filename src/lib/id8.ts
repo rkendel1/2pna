@@ -74,8 +74,20 @@ let seedPromise: Promise<void> | null = null;
 const isoHoursAgo = (hoursAgo: number) =>
   new Date(Date.now() - hoursAgo * 60 * 60 * 1000).toISOString();
 
-const parseList = (value?: string) =>
-  value ? (JSON.parse(value) as string[]) : [];
+const parseList = (value?: string) => {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
+};
 
 const serializeList = (value: string[]) => JSON.stringify(value);
 const makeEventId = (prefix: string, attentionId: string) =>
@@ -1448,26 +1460,6 @@ export async function continueAutonomousWork(attentionId: string) {
     });
   }
 
-  if (attentionId === "attention-blocked-payroll") {
-    await workItems.put(
-      {
-        ...waitingWork,
-        status: "completed",
-        output: "Workers' compensation submission sent to carrier.",
-        completed_at: now,
-      },
-      waitingWork.id,
-    );
-    await putEvent({
-      id: makeEventId("event-work-complete", attentionId),
-      attention: attentionId,
-      type: "work.completed",
-      detail: "Submission sent after blocked information was supplied.",
-      stage: "work",
-      created_at: now,
-    });
-  }
-
   await upsertEvaluation(attentionId, detail.plan.id);
 }
 
@@ -1670,6 +1662,10 @@ export function getHumanAttentionRules() {
 
 export function labelForDecision(choice: string) {
   return decisionLabels[choice as DecisionChoice] ?? choice;
+}
+
+export function isDecisionChoice(choice: string): choice is DecisionChoice {
+  return choice in decisionLabels;
 }
 
 export function listFromField(value?: string) {
